@@ -8,8 +8,10 @@ import android.util.Log;
 import android.view.View;
 import android.widget.Button;
 import android.widget.EditText;
+import android.widget.FrameLayout;
 import android.widget.LinearLayout;
 import android.widget.ListView;
+import android.widget.ProgressBar;
 import android.widget.RadioButton;
 import android.widget.RadioGroup;
 import android.widget.TextView;
@@ -27,19 +29,25 @@ import org.xmlpull.v1.XmlPullParserFactory;
 
 import java.io.StringReader;
 import java.util.ArrayList;
+import java.util.Collection;
+import java.util.Collections;
+import java.util.Comparator;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
+import java.util.TreeSet;
 
 public class MainActivity extends AppCompatActivity {
 
     private Button getInfo;
-    private EditText station;
     private LinearLayout info;
     private RequestQueue requestQueue;
     private FragmentManager fragmentManager;
     private List<InfoFragment> fragments = new ArrayList<InfoFragment>();
-    private HashMap<String, String> map = new HashMap<String, String>();
+    private HashMap<String, String> map;
     private RadioGroup radioGroup;
+    private ProgressBar progressBar;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -51,68 +59,18 @@ public class MainActivity extends AppCompatActivity {
         requestQueue = Volley.newRequestQueue(this);
         fragmentManager = getFragmentManager();
         radioGroup = (RadioGroup) findViewById(R.id.rdGrp);
+        progressBar = (ProgressBar) findViewById(R.id.progressBar);
+        map = (HashMap<String, String>)getIntent().getSerializableExtra("map");
 
-        String uri = "http://api.bart.gov/api/stn.aspx?cmd=stns&key=MW9S-E7SL-26DU-VV8V";
-        StringRequest request = new StringRequest(uri, new Response.Listener<String>() {
-            @Override
-            public void onResponse(String response) {
-                XmlPullParser pullParser = null;
-                XmlPullParserFactory factory = null;
-                try {
-                    factory = XmlPullParserFactory.newInstance();
-                    pullParser = factory.newPullParser();
-                    pullParser.setInput(new StringReader(response));
-                } catch (XmlPullParserException e) {
-                    e.printStackTrace();
-                }
-                String text = null;
-                int event;
-                try {
-                    event = pullParser.getEventType();
-                    String key = null;
-                    while(event != XmlPullParser.END_DOCUMENT) {
-                        String name = pullParser.getName();
-                        switch (event) {
-                            case XmlPullParser.START_TAG:
-                                break;
-                            case XmlPullParser.TEXT:
-                                text = pullParser.getText();
-                                break;
-                            case XmlPullParser.END_TAG:
-                                if(name.equals("name")) {
-                                    key = text;
-                                }
-                                if(name.equals("abbr")) {
-                                    map.put(key, text);
-                                    Log.d("name", key);
-                                    Log.d("abbr", text);
-                                }
-                                break;
-                        }
-                        event = pullParser.next();
-                    }
-                } catch (Exception e) {
-                    e.printStackTrace();
-                }
-
-                for(String key : map.keySet()) {
-//                    FragmentTransaction fragmentTransaction = fragmentManager.beginTransaction();
-//                    RadioFragment radioFragment = new RadioFragment();
-//                    radioFragment.fullName = key;
-//                    fragmentTransaction.add(R.id.rdGrp, radioFragment);
-//                    fragmentTransaction.commit();
-                    RadioButton radioButton = new RadioButton(MainActivity.this);
-                    radioButton.setText(key);
-                    radioGroup.addView(radioButton);
-                }
-            }
-        }, new Response.ErrorListener() {
-            @Override
-            public void onErrorResponse(VolleyError error) {
-                Log.d("error", "error");
-            }
-        });
-        requestQueue.add(request);
+        TreeSet<String> treeSet = new TreeSet<String>();
+        for(String key : map.keySet()) {
+            treeSet.add(key);
+        }
+        for(String key : treeSet) {
+            RadioButton radioButton = new RadioButton(MainActivity.this);
+            radioButton.setText(key);
+            radioGroup.addView(radioButton);
+        }
     }
 
     @Override
@@ -121,6 +79,7 @@ public class MainActivity extends AppCompatActivity {
         getInfo.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View v) {
+                progressBar.setVisibility(View.VISIBLE);
                 String check = null;
                 for(int i = 0; i < radioGroup.getChildCount(); i++) {
                     RadioButton child = (RadioButton)radioGroup.getChildAt(i);
@@ -130,7 +89,8 @@ public class MainActivity extends AppCompatActivity {
                     }
                 }
                 if(check == null) {
-                    Toast.makeText(MainActivity.this, "please select an station name", Toast.LENGTH_SHORT).show();
+                    Toast.makeText(MainActivity.this, "please select a station name", Toast.LENGTH_SHORT).show();
+                    progressBar.setVisibility(View.GONE);
                     return;
                 }
                 String uri = "http://api.bart.gov/api/etd.aspx?cmd=etd&orig=" + map.get(check) + "&key=MW9S-E7SL-26DU-VV8V";
@@ -197,10 +157,27 @@ public class MainActivity extends AppCompatActivity {
                                 event = pullParser.next();
                             }
                         } catch (Exception e) {
-
+                            e.printStackTrace();
                         }
+                        progressBar.setVisibility(View.GONE);
                         int count = 1;
                         fragments.clear();
+                        Collections.sort(list, new Comparator<Info>() {
+
+                            @Override
+                            public int compare(Info lhs, Info rhs) {
+                                if(lhs.minutes.equals("Leaving")) {
+                                    return -1;
+                                }
+                                if(rhs.minutes.equals("Leaving")) {
+                                    return 1;
+                                }
+                                return Integer.parseInt(lhs.minutes) - Integer.parseInt(rhs.minutes);
+                            }
+                        });
+                        if(list.size() == 0) {
+                            Toast.makeText(MainActivity.this, "No result found", Toast.LENGTH_SHORT).show();
+                        }
                         for(Info info : list) {
                             FragmentTransaction fragmentTransaction = fragmentManager.beginTransaction();
                             InfoFragment infoFragment = new InfoFragment();
